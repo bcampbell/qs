@@ -44,20 +44,22 @@ type context struct {
 // of the offending part of the input string.
 //
 // BNF(ish) query syntax:
-//   expr --> <empty> | part {binaryOp part}
-//   part --> unaryOp part | field base suffix
-//   base --> lit | range | "(" expr ")"
-//   range --> inclusiveRange | exclusiveRange
-//   inclusiveRange --> "[" [lit] "TO" [lit] "]"
-//   exclusiveRange --> "{" [lit] "TO" [lit] "}"
-//   binaryOp --> <empty> | "AND" | "OR"
-//   unaryOp --> "-" | "+" | "NOT"
-//   field --> <empty> | lit ":"
-//   suffix --> <empty> | "^" number | "~" [number]
+//   exprList = expr1*
+//   expr1 = expr2 {"OR" expr2}
+//   expr2 = expr3 {"AND" expr3}
+//   expr3 = {"NOT"} expr4
+//   expr4 = {("+"|"-")} expr5
+//   expr5 = {field} part {suffix}
+//   part = lit | range | "(" exprList ")"
+//   field = lit ":"
+//   range = ("["|"}") {lit} "TO" {lit} ("]"|"}")
+//   suffix = "^" number | "~" number
+//
+// (where lit is a string, quoted string or number)
 func (p *Parser) Parse(q string) (bleve.Query, error) {
 	p.tokens = lex(q)
 	ctx := context{field: ""}
-	return p.parseExpr(ctx)
+	return p.parseExprList(ctx)
 }
 
 // Parse takes a query string and turns it into a bleve Query using
@@ -96,76 +98,208 @@ func (p *Parser) next() token {
 }
 
 // starting point
-// expr --> <empty> | part {binaryOp part}
-func (p *Parser) parseExpr(ctx context) (bleve.Query, error) {
+//   exprList = expr1*
+func (p *Parser) parseExprList(ctx context) (bleve.Query, error) {
 	// <empty>
 	if p.peek().typ == tEOF {
 		return bleve.NewMatchNoneQuery(), nil
 	}
 
-	// | part {binaryOp part}
-	q, err := p.parsePart(ctx)
-	if err != nil {
-		return nil, err
-	}
+	must := []bleve.Query{}
+	mustNot := []bleve.Query{}
+	should := []bleve.Query{}
 
 	for {
 		tok := p.peek()
 		if tok.typ == tEOF {
-			return q, nil
+			break
 		}
-		// allows us to use parseExpr to parse expression lists... should break into separate func?
-		// TODO: remove this cheesy hack?
+		// slightly kludgy...
 		if tok.typ == tRPAREN {
-			return q, nil
+			break
 		}
 
-		op := p.parseBinaryOp(ctx)
-		if err != nil {
-			return nil, err
-		}
-		q2, err := p.parsePart(ctx)
+		prefix, q, err := p.parseExpr1(ctx)
 		if err != nil {
 			return nil, err
 		}
 
-		switch op {
-		case tAND:
-			q = bleve.NewConjunctionQuery([]bleve.Query{q, q2})
-		case tOR:
-			q = bleve.NewDisjunctionQuery([]bleve.Query{q, q2})
+		switch prefix {
+		case tPLUS:
+			must = append(must, q)
+		case tMINUS:
+			mustNot = append(mustNot, q)
 		default:
-			panic("bad op!")
+			should = append(should, q)
 		}
-
 	}
+
+	total := len(must) + len(mustNot) + len(should)
+	if total == 0 {
+		return bleve.NewMatchNoneQuery(), nil
+	}
+	if total == 1 && len(must) == 1 {
+		return must[0], nil
+	}
+	if total == 1 && len(should) == 1 {
+		return should[0], nil
+	}
+
+	return bleve.NewBooleanQuery(must, should, mustNot), nil
 }
 
-// part --> unaryOp part | field base suffix
-func (p *Parser) parsePart(ctx context) (bleve.Query, error) {
+/*
+	switch op {
+	case tAND:
+		q = bleve.NewConjunctionQuery([]bleve.Query{q, q2})
+	case tOR:
+		q = bleve.NewDisjunctionQuery([]bleve.Query{q, q2})
+	default:
+		panic("bad op!")
+	}
+*/
 
-	// unaryOp part
-	isUnary, unTok := p.parseUnaryOp()
-	if isUnary {
-		q, err := p.parsePart(ctx)
+// parseExpr1 handles OR expressions
+//
+//   expr1 = expr2 {"OR" expr2}
+func (p *Parser) parseExpr1(ctx context) (tokType, bleve.Query, error) {
+
+	queries := []bleve.Query{}
+	prefixes := []tokType{}
+
+	for {
+		prefix, q, err := p.parseExpr2(ctx)
 		if err != nil {
-			return nil, err
+			return tEOF, nil, err
 		}
-		switch unTok.typ {
-		case tNOT, tMINUS:
 
-			mustNot := []bleve.Query{q}
-			q = bleve.NewBooleanQuery(nil, nil, mustNot)
-		case tPLUS:
-			must := []bleve.Query{q}
-			q = bleve.NewBooleanQuery(must, nil, nil)
-		default:
-			return nil, ParseError{unTok.pos, "unexpected unary op"}
+		prefixes = append(prefixes, prefix)
+		queries = append(queries, q)
+
+		tok := p.next()
+		if tok.typ != tOR {
+			p.backup()
+			break
 		}
-		return q, nil
 	}
 
-	// | field base suffix
+	// let single, non-OR expressions bubble upward, prefix intact
+	if len(queries) == 1 {
+		return prefixes[0], queries[0], nil
+	}
+
+	// KLUDGINESS - prefixes on terms in OR expressions
+	// we'll ignore "+" and treat "-" as NOT
+	// eg:
+	// `+alice OR -bob OR chuck`  => `alice OR (NOT bob) OR chuck`
+	for i, _ := range queries {
+		if prefixes[i] == tMINUS {
+			queries[i] = bleve.NewBooleanQuery(
+				[]bleve.Query{},
+				[]bleve.Query{},
+				[]bleve.Query{queries[i]}, // mustNot
+			)
+		}
+	}
+
+	return tEOF, bleve.NewDisjunctionQuery(queries), nil
+}
+
+// parseExpr2 handles AND expressions
+//
+//   expr2 = expr3 {"AND" expr3}
+func (p *Parser) parseExpr2(ctx context) (tokType, bleve.Query, error) {
+
+	queries := []bleve.Query{}
+	prefixes := []tokType{}
+
+	for {
+		prefix, q, err := p.parseExpr3(ctx)
+		if err != nil {
+			return tEOF, nil, err
+		}
+
+		prefixes = append(prefixes, prefix)
+		queries = append(queries, q)
+
+		tok := p.next()
+		if tok.typ != tAND {
+			p.backup()
+			break
+		}
+	}
+
+	// let single, non-AND expressions bubble upward, prefix intact
+	if len(queries) == 1 {
+		return prefixes[0], queries[0], nil
+	}
+
+	// KLUDGINESS - prefixes on terms in AND expressions
+	// we'll ignore "+" and treat "-" as NOT
+	// eg:
+	// `+alice AND -bob AND chuck`  => `alice AND (NOT bob) AND chuck`
+	for i, _ := range queries {
+		if prefixes[i] == tMINUS {
+			queries[i] = bleve.NewBooleanQuery(
+				[]bleve.Query{},
+				[]bleve.Query{},
+				[]bleve.Query{queries[i]}, // mustNot
+			)
+		}
+	}
+
+	return tEOF, bleve.NewConjunctionQuery(queries), nil
+}
+
+//   expr3 = {"NOT"} expr4
+func (p *Parser) parseExpr3(ctx context) (tokType, bleve.Query, error) {
+
+	tok := p.next()
+	if tok.typ != tNOT {
+		p.backup()
+		// just let the lower, non-NOT expression bubble up with its prefix
+		return p.parseExpr4(ctx)
+	}
+
+	prefix, q, err := p.parseExpr4(ctx)
+	if err != nil {
+		return tEOF, nil, err
+	}
+
+	// KLUDGINESS - prefixes on terms in NOT expressions:
+	// `NOT -bob`  => `bob`
+	// `NOT +bob`  => `NOT bob`
+	if prefix != tMINUS {
+		q = bleve.NewBooleanQuery(
+			[]bleve.Query{},
+			[]bleve.Query{},
+			[]bleve.Query{q}, // mustNot
+		)
+	}
+	return tEOF, q, nil
+}
+
+// Here's where all the prefix-bubbling-up begins...
+//   expr4 = {("+"|"-")} expr5
+func (p *Parser) parseExpr4(ctx context) (tokType, bleve.Query, error) {
+	var prefix tokType
+	tok := p.next()
+	switch tok.typ {
+	case tMINUS, tPLUS:
+		prefix = tok.typ
+	default:
+		p.backup()
+		prefix = tEOF
+	}
+
+	q, err := p.parseExpr5(ctx)
+	return prefix, q, err
+
+}
+
+//   expr5 = {field} part {suffix}
+func (p *Parser) parseExpr5(ctx context) (bleve.Query, error) {
+
 	fldpos := p.peek().pos
 	fld, err := p.parseField()
 	if err != nil {
@@ -178,7 +312,7 @@ func (p *Parser) parsePart(ctx context) (bleve.Query, error) {
 		ctx.field = fld
 	}
 
-	q, err := p.parseBase(ctx)
+	q, err := p.parsePart(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -203,12 +337,12 @@ func (p *Parser) parsePart(ctx context) (bleve.Query, error) {
 	return q, nil
 }
 
-// base --> lit | range | "(" expr ")"
-func (p *Parser) parseBase(ctx context) (bleve.Query, error) {
+//   part = lit | range | "(" exprList ")"
+func (p *Parser) parsePart(ctx context) (bleve.Query, error) {
 
 	tok := p.next()
 
-	// literal
+	//   lit
 	if tok.typ == tLITERAL {
 		q := bleve.NewMatchPhraseQuery(tok.val)
 		if ctx.field != "" {
@@ -226,9 +360,9 @@ func (p *Parser) parseBase(ctx context) (bleve.Query, error) {
 		return q, nil
 	}
 
-	// | "(" expr ")"
+	//   | "(" exprList ")"
 	if tok.typ == tLPAREN {
-		q, err := p.parseExpr(ctx)
+		q, err := p.parseExprList(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -239,9 +373,7 @@ func (p *Parser) parseBase(ctx context) (bleve.Query, error) {
 		return q, nil
 	}
 
-	// TODO:
-	// | range
-
+	//   | range
 	if tok.typ == tLSQUARE || tok.typ == tLBRACE {
 		p.backup()
 		q, err := p.parseRange(ctx)
@@ -362,74 +494,89 @@ func (p *Parser) parseDate() (time.Time, error) {
 // inclusiveRange --> "[" [lit] "TO" [lit] "]"
 // exclusiveRange --> "{" [lit] "TO" [lit] "}"
 func (p *Parser) parseRange(ctx context) (bleve.Query, error) {
-	tok := p.next()
-	open := tok
-	if open.typ != tLSQUARE && open.typ != tLBRACE {
-		return nil, ParseError{tok.pos, "expected range"}
-	}
-	var start, end string
 
-	tok = p.next()
-	switch tok.typ {
-	case tLITERAL:
-		start = tok.val
-	case tQUOTED:
-		start = string(tok.val[1 : len(tok.val)-1])
-	case tTO:
-		p.backup()
-		// empty start
-	default:
+	panic("not implemented yet")
+	return bleve.NewMatchNoneQuery(), nil
+
+	/*
+		tok := p.next()
+		openTok := tok
+		if openTok.typ != tLSQUARE && openTok.typ != tLBRACE {
+			return nil, ParseError{tok.pos, "expected range"}
+		}
+		var start, end string
+
+		tok = p.next()
+		switch tok.typ {
+		case tLITERAL:
+			start = tok.val
+		case tQUOTED:
+			start = string(tok.val[1 : len(tok.val)-1])
+		case tTO:
+			p.backup()
+			// empty start
+		default:
+			return nil, ParseError{tok.pos, fmt.Sprintf("unexpected %s", tok.val)}
+		}
+
+		tok = p.next()
+		if tok.typ != tTO {
+			return nil, ParseError{tok.pos, "unexpected TO"}
+		}
+
+		tok = p.next()
+		switch tok.typ {
+		case tLITERAL:
+			end = tok.val
+		case tQUOTED:
+			end = string(tok.val[1 : len(tok.val)-1])
+		case tRSQUARE:
+			p.backup() // empty end value
+		case tRBRACE:
+			p.backup() // empty end value
+		default:
+			return nil, ParseError{tok.pos, fmt.Sprintf("unexpected %s", tok.val)}
+		}
+	*/
+	/*
+		   	if start == "" && end == "" {
+		   		return nil, ParseError{tok.pos, "empty range"}
+		   	}
+
+		   	var min *string
+		   	var minFlag *bool
+		   	var max *string
+		   	var maxFlag *bool
+		   	var fudge bool
+		   	if start != "" {
+		   		min = &start
+		   		minFlag = &fudge
+		   	}
+		   	if end != "" {
+		   		max = &end
+		   		maxFlag = &fudge
+		   	}
+		   	// NewNumericRangeInclusiveQuery
+
+		   	closeTok := p.next()
+		       endInclusive
+		       switch closeTok.typ {
+		       case tRSQUARE: endInclusive = true
+		       case tRBRACE: endInclusive = false
+		       }
+
+
+		   	if closeTok.typ != tLSQUARE && tok.typ == tRSQUARE {
+		   	if openTok.typ == tLSQUARE && tok.typ == tRSQUARE {
+		   		// inclusive range
+		   		fudge = true
+		   		return bleve.NewDateRangeInclusiveQuery(min, max, minFlag, maxFlag), nil
+		   	} else if openTok.typ == tLBRACE && tok.typ == tRBRACE {
+		   		// exclusive range
+		   		return bleve.NewDateRangeInclusiveQuery(min, max, minFlag, maxFlag), nil
+		   	}
+
 		return nil, ParseError{tok.pos, fmt.Sprintf("unexpected %s", tok.val)}
-	}
+	*/
 
-	tok = p.next()
-	if tok.typ != tTO {
-		return nil, ParseError{tok.pos, "unexpected TO"}
-	}
-
-	tok = p.next()
-	switch tok.typ {
-	case tLITERAL:
-		end = tok.val
-	case tQUOTED:
-		end = string(tok.val[1 : len(tok.val)-1])
-	case tRSQUARE:
-		p.backup() // empty end value
-	case tRBRACE:
-		p.backup() // empty end value
-	default:
-		return nil, ParseError{tok.pos, fmt.Sprintf("unexpected %s", tok.val)}
-	}
-
-	if start == "" && end == "" {
-		return nil, ParseError{tok.pos, "empty range"}
-	}
-
-	// TODO: determine types for start/end (number/date/string)
-	// or add a custom RangeQuery to bleve which handles it.
-	var min *string
-	var minFlag *bool
-	var max *string
-	var maxFlag *bool
-	var fudge bool
-	if start != "" {
-		min = &start
-		minFlag = &fudge
-	}
-	if end != "" {
-		max = &end
-		maxFlag = &fudge
-	}
-
-	tok = p.next()
-	if open.typ == tLSQUARE && tok.typ == tRSQUARE {
-		// inclusive range
-		fudge = true
-		return bleve.NewDateRangeInclusiveQuery(min, max, minFlag, maxFlag), nil
-	} else if open.typ == tLBRACE && tok.typ == tRBRACE {
-		// exclusive range
-		return bleve.NewDateRangeInclusiveQuery(min, max, minFlag, maxFlag), nil
-	}
-
-	return nil, ParseError{tok.pos, fmt.Sprintf("unexpected %s", tok.val)}
 }

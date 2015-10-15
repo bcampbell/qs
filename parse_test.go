@@ -83,12 +83,7 @@ func TestQuerySyntaxParserValid(t *testing.T) {
 		{
 			input:   "+field1:test1",
 			mapping: NewIndexMapping(),
-			result: bleve.NewBooleanQuery(
-				[]bleve.Query{
-					bleve.NewMatchPhraseQuery("test1").SetField("field1"),
-				},
-				nil,
-				nil),
+			result:  bleve.NewMatchPhraseQuery("test1").SetField("field1"),
 		},
 		{
 			input:   "-field2:test2",
@@ -108,12 +103,7 @@ func TestQuerySyntaxParserValid(t *testing.T) {
 		{
 			input:   `+field4:"test phrase 1"`,
 			mapping: NewIndexMapping(),
-			result: bleve.NewBooleanQuery(
-				[]bleve.Query{
-					bleve.NewMatchPhraseQuery("test phrase 1").SetField("field4"),
-				},
-				nil,
-				nil),
+			result:  bleve.NewMatchPhraseQuery("test phrase 1").SetField("field4"),
 		},
 		{
 			input:   `-field5:"test phrase 2"`,
@@ -125,37 +115,37 @@ func TestQuerySyntaxParserValid(t *testing.T) {
 					bleve.NewMatchPhraseQuery("test phrase 2").SetField("field5"),
 				}),
 		},
+		{
+			input:   `+field6:test3 -field7:test4 field8:test5`,
+			mapping: NewIndexMapping(),
+			result: bleve.NewBooleanQuery(
+				[]bleve.Query{
+					bleve.NewMatchPhraseQuery("test3").SetField("field6"),
+				},
+				[]bleve.Query{
+					bleve.NewMatchPhraseQuery("test5").SetField("field8"),
+				},
+				[]bleve.Query{
+					bleve.NewMatchPhraseQuery("test4").SetField("field7"),
+				}),
+		},
 		/*
 			{
-				input:   `+field6:test3 -field7:test4 field8:test5`,
+				input:   "test^3",
 				mapping: NewIndexMapping(),
-					result: bleve.NewBooleanQuery(
-						[]bleve.Query{
-							bleve.NewMatchPhraseQuery("test3").SetField("field6"),
-						},
-						[]bleve.Query{
-							bleve.NewMatchPhraseQuery("test5").SetField("field8"),
-						},
-						[]bleve.Query{
-							bleve.NewMatchPhraseQuery("test4").SetField("field7"),
-						}),
+				result:  bleve.NewMatchPhraseQuery("test").SetBoost(3.0),
+			},
+			{
+				input:   "test^3 other^6",
+				mapping: NewIndexMapping(),
+				result: bleve.NewDisjunctionQuery(
+					[]bleve.Query{
+						bleve.NewMatchPhraseQuery("test").SetBoost(3.0),
+						bleve.NewMatchPhraseQuery("other").SetBoost(6.0),
+					},
+				),
 			},
 		*/
-		{
-			input:   "test^3",
-			mapping: NewIndexMapping(),
-			result:  bleve.NewMatchPhraseQuery("test").SetBoost(3.0),
-		},
-		{
-			input:   "test^3 other^6",
-			mapping: NewIndexMapping(),
-			result: bleve.NewDisjunctionQuery(
-				[]bleve.Query{
-					bleve.NewMatchPhraseQuery("test").SetBoost(3.0),
-					bleve.NewMatchPhraseQuery("other").SetBoost(6.0),
-				},
-			),
-		},
 		{
 			input:   "33",
 			mapping: NewIndexMapping(),
@@ -288,10 +278,14 @@ func TestQuerySyntaxParserValid(t *testing.T) {
 			// default operator is OR
 			input:   `grapefruit lemon`,
 			mapping: NewIndexMapping(),
-			result: bleve.NewDisjunctionQuery([]bleve.Query{
-				bleve.NewMatchPhraseQuery("grapefruit"),
-				bleve.NewMatchPhraseQuery("lemon"),
-			}),
+			result: bleve.NewBooleanQuery(
+				nil,
+				[]bleve.Query{
+					bleve.NewMatchPhraseQuery("grapefruit"),
+					bleve.NewMatchPhraseQuery("lemon"),
+				},
+				nil,
+			),
 		},
 		{
 			input:   `grapefruit AND NOT lemon`,
