@@ -491,92 +491,74 @@ func (p *Parser) parseDate() (time.Time, error) {
 }
 */
 
-// inclusiveRange --> "[" [lit] "TO" [lit] "]"
-// exclusiveRange --> "{" [lit] "TO" [lit] "}"
+//   range = ("["|"}") {lit} "TO" {lit} ("]"|"}")
 func (p *Parser) parseRange(ctx context) (bleve.Query, error) {
 
-	panic("not implemented yet")
-	return bleve.NewMatchNoneQuery(), nil
+	openTok := p.next()
+	var startInclusive, endInclusive bool
+	var startVal, endVal *string
+	switch openTok.typ {
+	case tLSQUARE:
+		startInclusive = true
+	case tLBRACE:
+		startInclusive = false
+	default:
+		return nil, ParseError{openTok.pos, "expected range"}
+	}
 
-	/*
-		tok := p.next()
-		openTok := tok
-		if openTok.typ != tLSQUARE && openTok.typ != tLBRACE {
-			return nil, ParseError{tok.pos, "expected range"}
-		}
-		var start, end string
-
-		tok = p.next()
-		switch tok.typ {
-		case tLITERAL:
-			start = tok.val
-		case tQUOTED:
-			start = string(tok.val[1 : len(tok.val)-1])
-		case tTO:
-			p.backup()
-			// empty start
-		default:
-			return nil, ParseError{tok.pos, fmt.Sprintf("unexpected %s", tok.val)}
-		}
-
-		tok = p.next()
-		if tok.typ != tTO {
-			return nil, ParseError{tok.pos, "unexpected TO"}
-		}
-
-		tok = p.next()
-		switch tok.typ {
-		case tLITERAL:
-			end = tok.val
-		case tQUOTED:
-			end = string(tok.val[1 : len(tok.val)-1])
-		case tRSQUARE:
-			p.backup() // empty end value
-		case tRBRACE:
-			p.backup() // empty end value
-		default:
-			return nil, ParseError{tok.pos, fmt.Sprintf("unexpected %s", tok.val)}
-		}
-	*/
-	/*
-		   	if start == "" && end == "" {
-		   		return nil, ParseError{tok.pos, "empty range"}
-		   	}
-
-		   	var min *string
-		   	var minFlag *bool
-		   	var max *string
-		   	var maxFlag *bool
-		   	var fudge bool
-		   	if start != "" {
-		   		min = &start
-		   		minFlag = &fudge
-		   	}
-		   	if end != "" {
-		   		max = &end
-		   		maxFlag = &fudge
-		   	}
-		   	// NewNumericRangeInclusiveQuery
-
-		   	closeTok := p.next()
-		       endInclusive
-		       switch closeTok.typ {
-		       case tRSQUARE: endInclusive = true
-		       case tRBRACE: endInclusive = false
-		       }
-
-
-		   	if closeTok.typ != tLSQUARE && tok.typ == tRSQUARE {
-		   	if openTok.typ == tLSQUARE && tok.typ == tRSQUARE {
-		   		// inclusive range
-		   		fudge = true
-		   		return bleve.NewDateRangeInclusiveQuery(min, max, minFlag, maxFlag), nil
-		   	} else if openTok.typ == tLBRACE && tok.typ == tRBRACE {
-		   		// exclusive range
-		   		return bleve.NewDateRangeInclusiveQuery(min, max, minFlag, maxFlag), nil
-		   	}
-
+	tok := p.next()
+	switch tok.typ {
+	case tLITERAL:
+		startVal = &tok.val
+	case tQUOTED:
+		foo := string(tok.val[1 : len(tok.val)-1])
+		startVal = &foo
+	case tTO:
+		p.backup()
+		// empty start
+	default:
 		return nil, ParseError{tok.pos, fmt.Sprintf("unexpected %s", tok.val)}
-	*/
+	}
 
+	tok = p.next()
+	if tok.typ != tTO {
+		return nil, ParseError{tok.pos, "expected TO"}
+	}
+
+	tok = p.next()
+	switch tok.typ {
+	case tLITERAL:
+		endVal = &tok.val
+	case tQUOTED:
+		foo := string(tok.val[1 : len(tok.val)-1])
+		endVal = &foo
+	case tRSQUARE:
+		p.backup() // empty end value
+	case tRBRACE:
+		p.backup() // empty end value
+	default:
+		return nil, ParseError{tok.pos, fmt.Sprintf("unexpected %s", tok.val)}
+	}
+
+	closeTok := p.next()
+	switch closeTok.typ {
+	case tLSQUARE:
+		endInclusive = true
+	case tLBRACE:
+		endInclusive = false
+	default:
+		return nil, ParseError{closeTok.pos, "expected ] or }"}
+	}
+
+	if startVal == nil && endVal == nil {
+		return nil, ParseError{tok.pos, "empty range"}
+	}
+
+	// for now just assume it's a date range
+	// TODO: check if the values are timestamps, numbers or text
+	// (text ranges aren't supported in bleve yet, so it'd cause an error)
+	// TODO: for date ranges, handle compensation for inclusion/exclusion as per
+	// https://github.com/blevesearch/bleve/issues/251
+
+	return bleve.NewDateRangeInclusiveQuery(startVal, endVal, &startInclusive, &endInclusive), nil
 }
