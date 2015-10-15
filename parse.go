@@ -28,6 +28,8 @@ type Parser struct {
 	pos    int
 	// DefaultOp is used when no explict OR or AND is present
 	// ie: foo bar => foo OR bar | foo AND bar
+	// TODO: not sure AND/OR is the right terminology (but it's what others use)
+	// Doesn't actually use OR or AND. AND is treated as an implied '+' prefix
 	DefaultOp OpType
 }
 
@@ -130,7 +132,11 @@ func (p *Parser) parseExprList(ctx context) (bleve.Query, error) {
 		case tMINUS:
 			mustNot = append(mustNot, q)
 		default:
-			should = append(should, q)
+			if p.DefaultOp == AND {
+				must = append(must, q)
+			} else { // OR
+				should = append(should, q)
+			}
 		}
 	}
 
@@ -251,6 +257,8 @@ func (p *Parser) parseExpr2(ctx context) (tokType, bleve.Query, error) {
 	return tEOF, bleve.NewConjunctionQuery(queries), nil
 }
 
+// parseExpr3 handles NOT expressions
+//
 //   expr3 = {"NOT"} expr4
 func (p *Parser) parseExpr3(ctx context) (tokType, bleve.Query, error) {
 
@@ -388,32 +396,6 @@ func (p *Parser) parsePart(ctx context) (bleve.Query, error) {
 	}
 
 	return nil, ParseError{tok.pos, fmt.Sprintf("unexpected %s", tok.val)}
-}
-
-// AND | OR | <empty>
-// if empty, returns default op
-func (p *Parser) parseBinaryOp(ctx context) tokType {
-	tok := p.next()
-	if tok.typ == tAND || tok.typ == tOR {
-		return tok.typ
-	}
-	p.backup()
-	if p.DefaultOp == AND {
-		return tAND
-	} else {
-		return tOR
-	}
-}
-
-func (p *Parser) parseUnaryOp() (bool, token) {
-	tok := p.next()
-	switch tok.typ {
-	case tNOT, tPLUS, tMINUS:
-		return true, tok
-	default:
-		p.backup()
-		return false, token{}
-	}
 }
 
 // returns >0 if there is a value given
