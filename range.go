@@ -11,6 +11,7 @@ import (
 // helper stuff for setting up range queries
 
 // returns time, precision
+// TODO: support other precisions? "YYYY-MM", "YYYY-MM-DDThh:mm:ss" etc?
 func parseTime(in string, loc *time.Location) (time.Time, string) {
 	t, err := time.ParseInLocation("2006-01-02", in, loc)
 	if err != nil {
@@ -20,23 +21,21 @@ func parseTime(in string, loc *time.Location) (time.Time, string) {
 }
 
 type rangeParams struct {
-	min          *string
-	max          *string
-	minInclusive bool
-	maxInclusive bool
+	min, max                   *string
+	minInclusive, maxInclusive *bool
 	// need location for parsing times
 	loc *time.Location
 }
 
 func newRangeParams(minVal, maxVal string, minInc, maxInc bool, loc *time.Location) *rangeParams {
 	rp := &rangeParams{}
-	rp.minInclusive = minInc
-	rp.maxInclusive = maxInc
 	if minVal != "" {
 		rp.min = &minVal
+		rp.minInclusive = &minInc
 	}
 	if maxVal != "" {
 		rp.max = &maxVal
+		rp.maxInclusive = &maxInc
 	}
 	if loc == nil {
 		loc = time.UTC
@@ -65,16 +64,18 @@ func (rp *rangeParams) numericArgs() (bool, *float64, *float64) {
 }
 
 func (rp *rangeParams) dateArgs() (bool, time.Time, time.Time) {
+	var truthy bool = true
+	var falsey bool = false
 	var t1, t2 time.Time
 	var prec string
 	if rp.min != nil {
 		t1, prec = parseTime(*rp.min, rp.loc)
 		switch prec {
 		case "day":
-			if !rp.minInclusive {
+			if !*rp.minInclusive {
 				// add 1 day and make inclusive
 				t1 = t1.AddDate(0, 0, 1)
-				rp.minInclusive = true
+				rp.minInclusive = &truthy
 			}
 		default:
 			return false, t1, t2
@@ -84,10 +85,10 @@ func (rp *rangeParams) dateArgs() (bool, time.Time, time.Time) {
 		t2, prec = parseTime(*rp.max, rp.loc)
 		switch prec {
 		case "day":
-			if rp.maxInclusive {
+			if *rp.maxInclusive {
 				// add 1 day and change to exclusive
 				t2 = t2.AddDate(0, 0, 1)
-				rp.maxInclusive = false
+				rp.maxInclusive = &falsey
 			}
 		default:
 			return false, t1, t2
@@ -99,13 +100,12 @@ func (rp *rangeParams) dateArgs() (bool, time.Time, time.Time) {
 
 // try and build a query from the given params
 func (rp *rangeParams) generate() (bleve.Query, error) {
-
 	if rp.min == nil && rp.max == nil {
 		return nil, fmt.Errorf("empty range")
 	}
 	isNumeric, f1, f2 := rp.numericArgs()
 	if isNumeric {
-		return bleve.NewNumericRangeInclusiveQuery(f1, f2, &rp.minInclusive, &rp.maxInclusive), nil
+		return bleve.NewNumericRangeInclusiveQuery(f1, f2, rp.minInclusive, rp.maxInclusive), nil
 	}
 
 	isDate, t1, t2 := rp.dateArgs()
@@ -122,7 +122,7 @@ func (rp *rangeParams) generate() (bleve.Query, error) {
 			foo2 := numeric_util.Int64ToFloat64(t2.UnixNano())
 			fMax = &foo2
 		}
-		return bleve.NewNumericRangeInclusiveQuery(fMin, fMax, &rp.minInclusive, &rp.maxInclusive), nil
+		return bleve.NewNumericRangeInclusiveQuery(fMin, fMax, rp.minInclusive, rp.maxInclusive), nil
 	}
 	return nil, fmt.Errorf("not numeric")
 

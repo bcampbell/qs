@@ -2,7 +2,9 @@ package qs
 
 import (
 	"github.com/blevesearch/bleve"
+	"github.com/blevesearch/bleve/numeric_util"
 	"reflect"
+	"time"
 	//"strings"
 	"testing"
 )
@@ -10,9 +12,16 @@ import (
 var NewIndexMapping = bleve.NewIndexMapping
 
 func TestQuerySyntaxParserValid(t *testing.T) {
-	//fivePointOh := 5.0
-	//theTruth := true
-	//theFalsehood := false
+	fivePointOh := 5.0
+	onePointOh := 1.0
+	theTruth := true
+	theFalsehood := false
+
+	jan_01_2015 := numeric_util.Int64ToFloat64(time.Date(2015, time.January, 01, 0, 0, 0, 0, time.UTC).UnixNano())
+	jan_02_2015 := numeric_util.Int64ToFloat64(time.Date(2015, time.January, 02, 0, 0, 0, 0, time.UTC).UnixNano())
+	mar_15_2015 := numeric_util.Int64ToFloat64(time.Date(2015, time.March, 15, 0, 0, 0, 0, time.UTC).UnixNano())
+	mar_16_2015 := numeric_util.Int64ToFloat64(time.Date(2015, time.March, 16, 0, 0, 0, 0, time.UTC).UnixNano())
+
 	tests := []struct {
 		input   string
 		result  bleve.Query
@@ -45,41 +54,24 @@ func TestQuerySyntaxParserValid(t *testing.T) {
 			mapping: NewIndexMapping(),
 			result:  bleve.NewMatchPhraseQuery("t+est").SetField("field"),
 		},
-		/*
-			// > is allowed inside a term, just not the start
-			{
-				input:   "field:t>est",
-				mapping: NewIndexMapping(),
-				result: bleve.NewBooleanQuery(
-					nil,
-					[]bleve.Query{
-						bleve.NewMatchQuery("t>est").SetField("field"),
-					},
-					nil),
-			},
-			// < is allowed inside a term, just not the start
-			{
-				input:   "field:t<est",
-				mapping: NewIndexMapping(),
-				result: bleve.NewBooleanQuery(
-					nil,
-					[]bleve.Query{
-						bleve.NewMatchQuery("t<est").SetField("field"),
-					},
-					nil),
-			},
-			// = is allowed inside a term, just not the start
-			{
-				input:   "field:t=est",
-				mapping: NewIndexMapping(),
-				result: bleve.NewBooleanQuery(
-					nil,
-					[]bleve.Query{
-						bleve.NewMatchQuery("t=est").SetField("field"),
-					},
-					nil),
-			},
-		*/
+		// > is allowed inside a term, just not the start
+		{
+			input:   "field:t>est",
+			mapping: NewIndexMapping(),
+			result:  bleve.NewMatchPhraseQuery("t>est").SetField("field"),
+		},
+		// < is allowed inside a term, just not the start
+		{
+			input:   "field:t<est",
+			mapping: NewIndexMapping(),
+			result:  bleve.NewMatchPhraseQuery("t<est").SetField("field"),
+		},
+		// = is allowed inside a term, just not the start
+		{
+			input:   "field:t=est",
+			mapping: NewIndexMapping(),
+			result:  bleve.NewMatchPhraseQuery("t=est").SetField("field"),
+		},
 		{
 			input:   "+field1:test1",
 			mapping: NewIndexMapping(),
@@ -129,23 +121,23 @@ func TestQuerySyntaxParserValid(t *testing.T) {
 					bleve.NewMatchPhraseQuery("test4").SetField("field7"),
 				}),
 		},
-		/*
-			{
-				input:   "test^3",
-				mapping: NewIndexMapping(),
-				result:  bleve.NewMatchPhraseQuery("test").SetBoost(3.0),
-			},
-			{
-				input:   "test^3 other^6",
-				mapping: NewIndexMapping(),
-				result: bleve.NewDisjunctionQuery(
-					[]bleve.Query{
-						bleve.NewMatchPhraseQuery("test").SetBoost(3.0),
-						bleve.NewMatchPhraseQuery("other").SetBoost(6.0),
-					},
-				),
-			},
-		*/
+		{
+			input:   "test^3",
+			mapping: NewIndexMapping(),
+			result:  bleve.NewMatchPhraseQuery("test").SetBoost(3.0),
+		},
+		{
+			input:   "test^3 other^6",
+			mapping: NewIndexMapping(),
+			result: bleve.NewBooleanQuery(
+				nil,
+				[]bleve.Query{
+					bleve.NewMatchPhraseQuery("test").SetBoost(3.0),
+					bleve.NewMatchPhraseQuery("other").SetBoost(6.0),
+				},
+				nil,
+			),
+		},
 		{
 			input:   "33",
 			mapping: NewIndexMapping(),
@@ -216,48 +208,26 @@ func TestQuerySyntaxParserValid(t *testing.T) {
 			mapping: NewIndexMapping(),
 			result:  bleve.NewMatchPhraseQuery("555c3bb06f7a127cda000005").SetField("field"),
 		},
-		/*
-			{
-				input:   `field:>5`,
-				mapping: NewIndexMapping(),
-				result: bleve.NewBooleanQuery(
-					nil,
-					[]bleve.Query{
-						bleve.NewNumericRangeInclusiveQuery(&fivePointOh, nil, &theFalsehood, nil).SetField("field"),
-					},
-					nil),
-			},
-			{
-				input:   `field:>=5`,
-				mapping: NewIndexMapping(),
-				result: bleve.NewBooleanQuery(
-					nil,
-					[]bleve.Query{
-						bleve.NewNumericRangeInclusiveQuery(&fivePointOh, nil, &theTruth, nil).SetField("field"),
-					},
-					nil),
-			},
-			{
-				input:   `field:<5`,
-				mapping: NewIndexMapping(),
-				result: bleve.NewBooleanQuery(
-					nil,
-					[]bleve.Query{
-						bleve.NewNumericRangeInclusiveQuery(nil, &fivePointOh, nil, &theFalsehood).SetField("field"),
-					},
-					nil),
-			},
-			{
-				input:   `field:<=5`,
-				mapping: NewIndexMapping(),
-				result: bleve.NewBooleanQuery(
-					nil,
-					[]bleve.Query{
-						bleve.NewNumericRangeInclusiveQuery(nil, &fivePointOh, nil, &theTruth).SetField("field"),
-					},
-					nil),
-			},
-		*/
+		{
+			input:   `field:>5`,
+			mapping: NewIndexMapping(),
+			result:  bleve.NewNumericRangeInclusiveQuery(&fivePointOh, nil, &theFalsehood, nil).SetField("field"),
+		},
+		{
+			input:   `field:>=5`,
+			mapping: NewIndexMapping(),
+			result:  bleve.NewNumericRangeInclusiveQuery(&fivePointOh, nil, &theTruth, nil).SetField("field"),
+		},
+		{
+			input:   `field:<5`,
+			mapping: NewIndexMapping(),
+			result:  bleve.NewNumericRangeInclusiveQuery(nil, &fivePointOh, nil, &theFalsehood).SetField("field"),
+		},
+		{
+			input:   `field:<=5`,
+			mapping: NewIndexMapping(),
+			result:  bleve.NewNumericRangeInclusiveQuery(nil, &fivePointOh, nil, &theTruth).SetField("field"),
+		},
 		{
 			input:   `grapefruit AND lemon`,
 			mapping: NewIndexMapping(),
@@ -312,6 +282,57 @@ func TestQuerySyntaxParserValid(t *testing.T) {
 					bleve.NewMatchPhraseQuery("lemon").SetField("field"),
 				}),
 			}),
+		},
+		{
+			input:   `shoesize:[1 TO 5]`,
+			mapping: NewIndexMapping(),
+			result:  bleve.NewNumericRangeInclusiveQuery(&onePointOh, &fivePointOh, &theTruth, &theTruth).SetField("shoesize"),
+		},
+		{
+			input:   `shoesize:{1 TO 5}`,
+			mapping: NewIndexMapping(),
+			result:  bleve.NewNumericRangeInclusiveQuery(&onePointOh, &fivePointOh, &theFalsehood, &theFalsehood).SetField("shoesize"),
+		},
+		{
+			input:   `shoesize:[1 TO 5}`,
+			mapping: NewIndexMapping(),
+			result:  bleve.NewNumericRangeInclusiveQuery(&onePointOh, &fivePointOh, &theTruth, &theFalsehood).SetField("shoesize"),
+		},
+		{
+			input:   `shoesize:{1 TO 5]`,
+			mapping: NewIndexMapping(),
+			result:  bleve.NewNumericRangeInclusiveQuery(&onePointOh, &fivePointOh, &theFalsehood, &theTruth).SetField("shoesize"),
+		},
+		{
+			input:   `shoesize:[ TO 5]`,
+			mapping: NewIndexMapping(),
+			result:  bleve.NewNumericRangeInclusiveQuery(nil, &fivePointOh, nil, &theTruth).SetField("shoesize"),
+		},
+		{
+			input:   `shoesize:[1 TO ]`,
+			mapping: NewIndexMapping(),
+			result:  bleve.NewNumericRangeInclusiveQuery(&onePointOh, nil, &theTruth, nil).SetField("shoesize"),
+		},
+		// date ranges (note that endpoints and inclusivity might be modified by the parser)
+		{
+			input:   `when:[2015-01-01 TO 2015-03-15]`,
+			mapping: NewIndexMapping(),
+			result:  bleve.NewNumericRangeInclusiveQuery(&jan_01_2015, &mar_16_2015, &theTruth, &theFalsehood).SetField("when"),
+		},
+		{
+			input:   `when:{2015-01-01 TO 2015-03-15]`,
+			mapping: NewIndexMapping(),
+			result:  bleve.NewNumericRangeInclusiveQuery(&jan_02_2015, &mar_16_2015, &theTruth, &theFalsehood).SetField("when"),
+		},
+		{
+			input:   `when:[2015-01-01 TO 2015-03-15}`,
+			mapping: NewIndexMapping(),
+			result:  bleve.NewNumericRangeInclusiveQuery(&jan_01_2015, &mar_15_2015, &theTruth, &theFalsehood).SetField("when"),
+		},
+		{
+			input:   `when:>2015-03-15`,
+			mapping: NewIndexMapping(),
+			result:  bleve.NewNumericRangeInclusiveQuery(&mar_16_2015, nil, &theTruth, nil).SetField("when"),
 		},
 	}
 

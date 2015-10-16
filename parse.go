@@ -60,6 +60,7 @@ type context struct {
 //   part = lit | range | "(" exprList ")"
 //   field = lit ":"
 //   range = ("["|"}") {lit} "TO" {lit} ("]"|"}")
+//   relational = ("<"|">"|"<="|">=") lit
 //   suffix = "^" number | "~" number
 //
 // (where lit is a string, quoted string or number)
@@ -385,6 +386,16 @@ func (p *Parser) parsePart(ctx context) (bleve.Query, error) {
 		return q, nil
 	}
 
+	//   | relational
+	if tok.typ == tGREATER || tok.typ == tLESS {
+		p.backup()
+		q, err := p.parseRelational(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return q, nil
+	}
+
 	if tok.typ == tERROR {
 		return nil, ParseError{tok.pos, tok.val}
 	}
@@ -452,21 +463,6 @@ func (p *Parser) parseField() (string, error) {
 	return field, nil // it's OK
 }
 
-// expects "YYYY-MM-DD" form
-/*
-func (p *Parser) parseDate() (time.Time, error) {
-	tok := p.next()
-	if tok.typ != tLIT {
-		return time.Time{}, fmt.Errorf("expected date, got %s", tok)
-	}
-	t, err := time.Parse("2006-01-02", tok.val)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("expected YYYY-MM-DD, got '%s' (%s)", tok.val, err)
-	}
-	return t, nil
-}
-*/
-
 //   range = ("["|"}") {lit} "TO" {lit} ("]"|"}")
 func (p *Parser) parseRange(ctx context) (bleve.Query, error) {
 
@@ -528,6 +524,57 @@ func (p *Parser) parseRange(ctx context) (bleve.Query, error) {
 	q, err := rp.generate()
 	if err != nil {
 		return nil, ParseError{openTok.pos, err.Error()}
+	}
+	if ctx.field != "" {
+		q.SetField(ctx.field)
+	}
+	return q, nil
+}
+
+// parseRelational handles greaterthan/lessthan etc...
+// Implemented as a range.
+//   relational = ("<"|">"|"<="|">=") lit
+func (p *Parser) parseRelational(ctx context) (bleve.Query, error) {
+
+	var minVal, maxVal string
+	var minInclusive, maxInclusive bool
+
+	rel := p.next()
+	if rel.typ != tGREATER && rel.typ != tLESS {
+		return nil, ParseError{rel.pos, "expected > or <"}
+	}
+
+	eq := p.next()
+	if eq.typ != tEQUAL {
+		p.backup()
+	}
+
+	var val string
+	tok := p.next()
+	switch tok.typ {
+	case tLITERAL:
+		val = tok.val
+	case tQUOTED:
+		val = tok.val[1 : len(tok.val)-1]
+	default:
+		return nil, ParseError{tok.pos, fmt.Sprintf("unexpected %s", tok.val)}
+	}
+
+	if rel.typ == tGREATER {
+		minVal = val
+		minInclusive = (eq.typ == tEQUAL)
+	} else { // if rel.typ == tLESS
+		maxVal = val
+		maxInclusive = (eq.typ == tEQUAL)
+	}
+
+	rp := newRangeParams(minVal, maxVal, minInclusive, maxInclusive, p.Loc)
+	q, err := rp.generate()
+	if err != nil {
+		return nil, ParseError{rel.pos, err.Error()}
+	}
+	if ctx.field != "" {
+		q.SetField(ctx.field)
 	}
 	return q, nil
 }
