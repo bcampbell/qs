@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/blevesearch/bleve"
 	"strconv"
+	"time"
 )
 
 // ParseError is the error type returned by Parse()
@@ -31,6 +32,10 @@ type Parser struct {
 	// TODO: not sure AND/OR is the right terminology (but it's what others use)
 	// Doesn't actually use OR or AND. AND is treated as an implied '+' prefix
 	DefaultOp OpType
+
+	// Loc is the location to use for parsing dates in range queries.
+	// If nil, UTC is assumed.
+	Loc *time.Location
 }
 
 // context is used to hold settings active within a given scope during parsing
@@ -153,17 +158,6 @@ func (p *Parser) parseExprList(ctx context) (bleve.Query, error) {
 
 	return bleve.NewBooleanQuery(must, should, mustNot), nil
 }
-
-/*
-	switch op {
-	case tAND:
-		q = bleve.NewConjunctionQuery([]bleve.Query{q, q2})
-	case tOR:
-		q = bleve.NewDisjunctionQuery([]bleve.Query{q, q2})
-	default:
-		panic("bad op!")
-	}
-*/
 
 // parseExpr1 handles OR expressions
 //
@@ -476,14 +470,14 @@ func (p *Parser) parseDate() (time.Time, error) {
 //   range = ("["|"}") {lit} "TO" {lit} ("]"|"}")
 func (p *Parser) parseRange(ctx context) (bleve.Query, error) {
 
+	var minVal, maxVal string
+	var minInclusive, maxInclusive bool
 	openTok := p.next()
-	var startInclusive, endInclusive bool
-	var startVal, endVal *string
 	switch openTok.typ {
 	case tLSQUARE:
-		startInclusive = true
+		minInclusive = true
 	case tLBRACE:
-		startInclusive = false
+		minInclusive = false
 	default:
 		return nil, ParseError{openTok.pos, "expected range"}
 	}
@@ -491,10 +485,9 @@ func (p *Parser) parseRange(ctx context) (bleve.Query, error) {
 	tok := p.next()
 	switch tok.typ {
 	case tLITERAL:
-		startVal = &tok.val
+		minVal = tok.val
 	case tQUOTED:
-		foo := string(tok.val[1 : len(tok.val)-1])
-		startVal = &foo
+		minVal = tok.val[1 : len(tok.val)-1]
 	case tTO:
 		p.backup()
 		// empty start
@@ -510,10 +503,9 @@ func (p *Parser) parseRange(ctx context) (bleve.Query, error) {
 	tok = p.next()
 	switch tok.typ {
 	case tLITERAL:
-		endVal = &tok.val
+		maxVal = tok.val
 	case tQUOTED:
-		foo := string(tok.val[1 : len(tok.val)-1])
-		endVal = &foo
+		maxVal = tok.val[1 : len(tok.val)-1]
 	case tRSQUARE:
 		p.backup() // empty end value
 	case tRBRACE:
@@ -524,23 +516,18 @@ func (p *Parser) parseRange(ctx context) (bleve.Query, error) {
 
 	closeTok := p.next()
 	switch closeTok.typ {
-	case tLSQUARE:
-		endInclusive = true
-	case tLBRACE:
-		endInclusive = false
+	case tRSQUARE:
+		maxInclusive = true
+	case tRBRACE:
+		maxInclusive = false
 	default:
 		return nil, ParseError{closeTok.pos, "expected ] or }"}
 	}
 
-	if startVal == nil && endVal == nil {
-		return nil, ParseError{tok.pos, "empty range"}
+	rp := newRangeParams(minVal, maxVal, minInclusive, maxInclusive, p.Loc)
+	q, err := rp.generate()
+	if err != nil {
+		return nil, ParseError{openTok.pos, err.Error()}
 	}
-
-	// for now just assume it's a date range
-	// TODO: check if the values are timestamps, numbers or text
-	// (text ranges aren't supported in bleve yet, so it'd cause an error)
-	// TODO: for date ranges, handle compensation for inclusion/exclusion as per
-	// https://github.com/blevesearch/bleve/issues/251
-
-	return bleve.NewDateRangeInclusiveQuery(startVal, endVal, &startInclusive, &endInclusive), nil
+	return q, nil
 }
