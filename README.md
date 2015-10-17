@@ -1,3 +1,5 @@
+[![GoDoc](https://godoc.org/github.com/bcampbell/qs?status.svg)](https://godoc.org/github.com/bcampbell/qs)
+
 ## Overview
 
 qs implements a query language for the [Bleve](http://www.blevesearch.com/)
