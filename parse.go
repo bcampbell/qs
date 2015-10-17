@@ -57,12 +57,12 @@ type context struct {
 //   expr2 = expr3 {"AND" expr3}
 //   expr3 = {"NOT"} expr4
 //   expr4 = {("+"|"-")} expr5
-//   expr5 = {field} part {suffix}
-//   part = lit | range | "(" exprList ")"
+//   expr5 = {field} part {boost}
+//   part = lit {"~" number} | range | "(" exprList ")"
 //   field = lit ":"
 //   range = ("["|"}") {lit} "TO" {lit} ("]"|"}")
 //   relational = ("<"|">"|"<="|">=") lit
-//   suffix = "^" number | "~" number
+//   boost = "^" number
 //
 // (where lit is a string, quoted string or number)
 func (p *Parser) Parse(q string) (bleve.Query, error) {
@@ -301,7 +301,7 @@ func (p *Parser) parseExpr4(ctx context) (tokType, bleve.Query, error) {
 
 }
 
-//   expr5 = {field} part {suffix}
+//   expr5 = {field} part {boost}
 func (p *Parser) parseExpr5(ctx context) (bleve.Query, error) {
 
 	fldpos := p.peek().pos
@@ -330,18 +330,10 @@ func (p *Parser) parseExpr5(ctx context) (bleve.Query, error) {
 		q.SetBoost(boost)
 	}
 
-	fuzziness, err := p.parseFuzzySuffix()
-	if err != nil {
-		return nil, err
-	}
-	if fuzziness > 0 {
-		// TODO: check for SetFuzziness() fn on q
-	}
-
 	return q, nil
 }
 
-//   part = lit | range | "(" exprList ")"
+//   part = lit {"~" number} | range | "(" exprList ")"
 func (p *Parser) parsePart(ctx context) (bleve.Query, error) {
 
 	tok := p.next()
@@ -352,7 +344,15 @@ func (p *Parser) parsePart(ctx context) (bleve.Query, error) {
 		if strings.ContainsAny(tok.val, "*?") {
 			q = bleve.NewWildcardQuery(tok.val)
 		} else {
-			q = bleve.NewMatchPhraseQuery(tok.val)
+			if p.peek().typ == tFUZZY {
+				fuzziness, err := p.parseFuzzySuffix()
+				if err != nil {
+					return nil, err
+				}
+				q = bleve.NewFuzzyQuery(tok.val).SetFuzziness(fuzziness)
+			} else {
+				q = bleve.NewMatchPhraseQuery(tok.val)
+			}
 		}
 		if ctx.field != "" {
 			q.SetField(ctx.field)
@@ -431,19 +431,18 @@ func (p *Parser) parseBoostSuffix() (float64, error) {
 	return boost, nil
 }
 
-// returns >0 if there is a value given
-func (p *Parser) parseFuzzySuffix() (float64, error) {
+//
+func (p *Parser) parseFuzzySuffix() (int, error) {
 	tok := p.next()
 	if tok.typ != tFUZZY {
-		p.backup()
-		return 0, nil
+		return 0, ParseError{tok.pos, "expected ~"}
 	}
 
 	v := tok.val[1:]
 	if v == "" {
-		return 0, nil
+		return 2, nil // Default fuzziness is 2
 	}
-	fuzz, err := strconv.ParseFloat(v, 64)
+	fuzz, err := strconv.Atoi(v)
 	if err != nil {
 		return 0, ParseError{tok.pos, "bad fuzziness value"}
 	}

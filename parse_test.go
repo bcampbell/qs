@@ -153,61 +153,46 @@ func TestQuerySyntaxParserValid(t *testing.T) {
 			mapping: NewIndexMapping(),
 			result:  bleve.NewMatchPhraseQuery("cat-dog"),
 		},
-		/*
-			        // TODO: MatchPhraseQuery doesn't handle fuzziness...
-					{
-						input:   "watex~",
-						mapping: NewIndexMapping(),
-						result:  bleve.NewMatchPhraseQuery("watex").SetFuzziness(1),
-					},
+		// fuzzy queries
+		{
+			input:   "watex~",
+			mapping: NewIndexMapping(),
+			result:  bleve.NewFuzzyQuery("watex").SetFuzziness(2),
+		},
 
-				{
-					input:   "watex~2",
-					mapping: NewIndexMapping(),
-					result: bleve.NewBooleanQuery(
-						nil,
-						[]bleve.Query{
-							bleve.NewMatchQuery("watex").SetFuzziness(2),
-						},
-						nil),
+		{
+			input:   "watex~3",
+			mapping: NewIndexMapping(),
+			result:  bleve.NewFuzzyQuery("watex").SetFuzziness(3),
+		},
+		{
+			input:   "watex~ 4",
+			mapping: NewIndexMapping(),
+			result: bleve.NewBooleanQuery(
+				nil,
+				[]bleve.Query{
+					bleve.NewFuzzyQuery("watex").SetFuzziness(2),
+					bleve.NewMatchPhraseQuery("4"),
 				},
-				{
-					input:   "watex~ 2",
-					mapping: NewIndexMapping(),
-					result: bleve.NewBooleanQuery(
-						nil,
-						[]bleve.Query{
-							bleve.NewMatchQuery("watex").SetFuzziness(1),
-							bleve.NewMatchQuery("2"),
-						},
-						nil),
-				},
-				{
-					input:   "field:watex~",
-					mapping: NewIndexMapping(),
-					result: bleve.NewBooleanQuery(
-						nil,
-						[]bleve.Query{
-							bleve.NewMatchQuery("watex").SetFuzziness(1).SetField("field"),
-						},
-						nil),
-				},
-				{
-					input:   "field:watex~2",
-					mapping: NewIndexMapping(),
-					result: bleve.NewBooleanQuery(
-						nil,
-						[]bleve.Query{
-							bleve.NewMatchQuery("watex").SetFuzziness(2).SetField("field"),
-						},
-						nil),
-				},
-		*/
+				nil),
+		},
+		{
+			input:   "field:watex~",
+			mapping: NewIndexMapping(),
+			result:  bleve.NewFuzzyQuery("watex").SetFuzziness(2).SetField("field"),
+		},
+		{
+			input:   "field:watex~1",
+			mapping: NewIndexMapping(),
+			result:  bleve.NewFuzzyQuery("watex").SetFuzziness(1).SetField("field"),
+		},
+		// misc
 		{
 			input:   `field:555c3bb06f7a127cda000005`,
 			mapping: NewIndexMapping(),
 			result:  bleve.NewMatchPhraseQuery("555c3bb06f7a127cda000005").SetField("field"),
 		},
+		// relational
 		{
 			input:   `field:>5`,
 			mapping: NewIndexMapping(),
@@ -334,6 +319,7 @@ func TestQuerySyntaxParserValid(t *testing.T) {
 			mapping: NewIndexMapping(),
 			result:  bleve.NewNumericRangeInclusiveQuery(&mar_16_2015, nil, &theTruth, nil).SetField("when"),
 		},
+		// Wildcards
 		{
 			input:   `foo*`,
 			mapping: NewIndexMapping(),
