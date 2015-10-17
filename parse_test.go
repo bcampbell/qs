@@ -334,6 +334,16 @@ func TestQuerySyntaxParserValid(t *testing.T) {
 			mapping: NewIndexMapping(),
 			result:  bleve.NewNumericRangeInclusiveQuery(&mar_16_2015, nil, &theTruth, nil).SetField("when"),
 		},
+		{
+			input:   `foo*`,
+			mapping: NewIndexMapping(),
+			result:  bleve.NewWildcardQuery(`foo*`),
+		},
+		{
+			input:   `f?rt`,
+			mapping: NewIndexMapping(),
+			result:  bleve.NewWildcardQuery(`f?rt`),
+		},
 	}
 
 	for _, test := range tests {

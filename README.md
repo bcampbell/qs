@@ -61,4 +61,14 @@ Inclusive ranges in square brackets, Exclusive ranges in curly brackets:
     date:[2012-01-01 TO 2012-12-31]
     count:{0 TO 100}
 
+Wildcard markers `*` (any character sequence, 0 or more) and `?` (any single character)
+eg to match `foot`, `fort`, `fret` etc:
+
+    f??t
+
+eg to match `ant`, `anteater`, `antidisestablishmentarianism` etc:
+
+    ant*
+
+
 

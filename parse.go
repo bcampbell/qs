@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/blevesearch/bleve"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -347,7 +348,12 @@ func (p *Parser) parsePart(ctx context) (bleve.Query, error) {
 
 	//   lit
 	if tok.typ == tLITERAL {
-		q := bleve.NewMatchPhraseQuery(tok.val)
+		var q bleve.Query
+		if strings.ContainsAny(tok.val, "*?") {
+			q = bleve.NewWildcardQuery(tok.val)
+		} else {
+			q = bleve.NewMatchPhraseQuery(tok.val)
+		}
 		if ctx.field != "" {
 			q.SetField(ctx.field)
 		}
@@ -356,6 +362,11 @@ func (p *Parser) parsePart(ctx context) (bleve.Query, error) {
 	if tok.typ == tQUOTED {
 		// strip quotes (ugh)
 		txt := string(tok.val[1 : len(tok.val)-1])
+		/*
+			if strings.ContainsAny(txt, "*?") {
+				return nil, ParseError{tok.pos, "wildcards not supported in phrases"}
+			}
+		*/
 		q := bleve.NewMatchPhraseQuery(txt)
 		if ctx.field != "" {
 			q.SetField(ctx.field)
