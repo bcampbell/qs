@@ -9,6 +9,7 @@ The query syntax is aiming to be about the same as those used by
 [Lucene](http://lucene.apache.org/core/5_3_1/queryparser/org/apache/lucene/queryparser/classic/package-summary.html#package_description)
 and [Elasticsearch](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-query-string-query.html#query-string-syntax).
 
+The full syntax is described in [syntax.md](syntax.md).
 
 ## Usage
 
@@ -37,7 +38,7 @@ There is support for boolean AND, OR and NOT:
 
 Phrases are indicated with quotes:
 
-   "navel orange"
+    "navel orange"
 
 The default boolean operator is OR, so these two are equivalent when using the default parser:
 
