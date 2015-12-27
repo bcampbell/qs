@@ -1,4 +1,4 @@
-// bleve_queryparser - parse and dump a query string to json
+// bleve_queryparser - tool to parse and dump a query string to json for debugging.
 //
 // The output is a little terse, so easier to read if you pipe it
 // through a json prettifier first, eg:

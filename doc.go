@@ -1,5 +1,5 @@
 /*
-Package qs is a query language parser for Bleve (http://www.blevesearch.com)
+Package qs is a query language parser for Bleve (http://www.blevesearch.com).
 
 Example:
 
