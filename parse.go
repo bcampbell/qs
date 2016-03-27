@@ -68,6 +68,19 @@ type context struct {
 func (p *Parser) Parse(q string) (bleve.Query, error) {
 	p.tokens = lex(q)
 	ctx := context{field: ""}
+
+	tree, err := p.parseExprList(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return tree.ToBleve(), nil
+}
+
+func (p *Parser) ParseToTree(q string) (*Query, error) {
+	p.tokens = lex(q)
+	ctx := context{field: ""}
+
 	return p.parseExprList(ctx)
 }
 
@@ -108,15 +121,15 @@ func (p *Parser) next() token {
 
 // starting point
 //   exprList = expr1*
-func (p *Parser) parseExprList(ctx context) (bleve.Query, error) {
+func (p *Parser) parseExprList(ctx context) (*Query, error) {
 	// <empty>
 	if p.peek().typ == tEOF {
-		return bleve.NewMatchNoneQuery(), nil
+		return newMatchNoneQuery(), nil
 	}
 
-	must := []bleve.Query{}
-	mustNot := []bleve.Query{}
-	should := []bleve.Query{}
+	must := []*Query{}
+	mustNot := []*Query{}
+	should := []*Query{}
 
 	for {
 		tok := p.peek()
@@ -149,7 +162,7 @@ func (p *Parser) parseExprList(ctx context) (bleve.Query, error) {
 
 	total := len(must) + len(mustNot) + len(should)
 	if total == 0 {
-		return bleve.NewMatchNoneQuery(), nil
+		return newMatchNoneQuery(), nil
 	}
 	if total == 1 && len(must) == 1 {
 		return must[0], nil
@@ -158,15 +171,15 @@ func (p *Parser) parseExprList(ctx context) (bleve.Query, error) {
 		return should[0], nil
 	}
 
-	return bleve.NewBooleanQuery(must, should, mustNot), nil
+	return newBooleanQuery(must, should, mustNot), nil
 }
 
 // parseExpr1 handles OR expressions
 //
 //   expr1 = expr2 {"OR" expr2}
-func (p *Parser) parseExpr1(ctx context) (tokType, bleve.Query, error) {
+func (p *Parser) parseExpr1(ctx context) (tokType, *Query, error) {
 
-	queries := []bleve.Query{}
+	queries := []*Query{}
 	prefixes := []tokType{}
 
 	for {
@@ -196,23 +209,23 @@ func (p *Parser) parseExpr1(ctx context) (tokType, bleve.Query, error) {
 	// `+alice OR -bob OR chuck`  => `alice OR (NOT bob) OR chuck`
 	for i, _ := range queries {
 		if prefixes[i] == tMINUS {
-			queries[i] = bleve.NewBooleanQuery(
-				[]bleve.Query{},
-				[]bleve.Query{},
-				[]bleve.Query{queries[i]}, // mustNot
+			queries[i] = newBooleanQuery(
+				[]*Query{},
+				[]*Query{},
+				[]*Query{queries[i]}, // mustNot
 			)
 		}
 	}
 
-	return tEOF, bleve.NewDisjunctionQuery(queries), nil
+	return tEOF, newDisjunctionQuery(queries), nil
 }
 
 // parseExpr2 handles AND expressions
 //
 //   expr2 = expr3 {"AND" expr3}
-func (p *Parser) parseExpr2(ctx context) (tokType, bleve.Query, error) {
+func (p *Parser) parseExpr2(ctx context) (tokType, *Query, error) {
 
-	queries := []bleve.Query{}
+	queries := []*Query{}
 	prefixes := []tokType{}
 
 	for {
@@ -242,21 +255,21 @@ func (p *Parser) parseExpr2(ctx context) (tokType, bleve.Query, error) {
 	// `+alice AND -bob AND chuck`  => `alice AND (NOT bob) AND chuck`
 	for i, _ := range queries {
 		if prefixes[i] == tMINUS {
-			queries[i] = bleve.NewBooleanQuery(
-				[]bleve.Query{},
-				[]bleve.Query{},
-				[]bleve.Query{queries[i]}, // mustNot
+			queries[i] = newBooleanQuery(
+				[]*Query{},
+				[]*Query{},
+				[]*Query{queries[i]}, // mustNot
 			)
 		}
 	}
 
-	return tEOF, bleve.NewConjunctionQuery(queries), nil
+	return tEOF, newConjunctionQuery(queries), nil
 }
 
 // parseExpr3 handles NOT expressions
 //
 //   expr3 = {"NOT"} expr4
-func (p *Parser) parseExpr3(ctx context) (tokType, bleve.Query, error) {
+func (p *Parser) parseExpr3(ctx context) (tokType, *Query, error) {
 
 	tok := p.next()
 	if tok.typ != tNOT {
@@ -274,10 +287,10 @@ func (p *Parser) parseExpr3(ctx context) (tokType, bleve.Query, error) {
 	// `NOT -bob`  => `bob`
 	// `NOT +bob`  => `NOT bob`
 	if prefix != tMINUS {
-		q = bleve.NewBooleanQuery(
-			[]bleve.Query{},
-			[]bleve.Query{},
-			[]bleve.Query{q}, // mustNot
+		q = newBooleanQuery(
+			[]*Query{},
+			[]*Query{},
+			[]*Query{q}, // mustNot
 		)
 	}
 	return tEOF, q, nil
@@ -285,7 +298,7 @@ func (p *Parser) parseExpr3(ctx context) (tokType, bleve.Query, error) {
 
 // Here's where all the prefix-bubbling-up begins...
 //   expr4 = {("+"|"-")} expr5
-func (p *Parser) parseExpr4(ctx context) (tokType, bleve.Query, error) {
+func (p *Parser) parseExpr4(ctx context) (tokType, *Query, error) {
 	var prefix tokType
 	tok := p.next()
 	switch tok.typ {
@@ -302,7 +315,7 @@ func (p *Parser) parseExpr4(ctx context) (tokType, bleve.Query, error) {
 }
 
 //   expr5 = {field} part {boost}
-func (p *Parser) parseExpr5(ctx context) (bleve.Query, error) {
+func (p *Parser) parseExpr5(ctx context) (*Query, error) {
 
 	fldpos := p.peek().pos
 	fld, err := p.parseField()
@@ -334,24 +347,24 @@ func (p *Parser) parseExpr5(ctx context) (bleve.Query, error) {
 }
 
 //   part = lit {"~" number} | range | "(" exprList ")"
-func (p *Parser) parsePart(ctx context) (bleve.Query, error) {
+func (p *Parser) parsePart(ctx context) (*Query, error) {
 
 	tok := p.next()
 
 	//   lit
 	if tok.typ == tLITERAL {
-		var q bleve.Query
+		var q *Query
 		if strings.ContainsAny(tok.val, "*?") {
-			q = bleve.NewWildcardQuery(tok.val)
+			q = newWildcardQuery(tok.val)
 		} else {
 			if p.peek().typ == tFUZZY {
 				fuzziness, err := p.parseFuzzySuffix()
 				if err != nil {
 					return nil, err
 				}
-				q = bleve.NewFuzzyQuery(tok.val).SetFuzziness(fuzziness)
+				q = newFuzzyQuery(tok.val).SetFuzziness(fuzziness)
 			} else {
-				q = bleve.NewMatchPhraseQuery(tok.val)
+				q = newMatchPhraseQuery(tok.val)
 			}
 		}
 		if ctx.field != "" {
@@ -367,7 +380,7 @@ func (p *Parser) parsePart(ctx context) (bleve.Query, error) {
 				return nil, ParseError{tok.pos, "wildcards not supported in phrases"}
 			}
 		*/
-		q := bleve.NewMatchPhraseQuery(txt)
+		q := newMatchPhraseQuery(txt)
 		if ctx.field != "" {
 			q.SetField(ctx.field)
 		}
@@ -474,7 +487,7 @@ func (p *Parser) parseField() (string, error) {
 }
 
 //   range = ("["|"}") {lit} "TO" {lit} ("]"|"}")
-func (p *Parser) parseRange(ctx context) (bleve.Query, error) {
+func (p *Parser) parseRange(ctx context) (*Query, error) {
 
 	var minVal, maxVal string
 	var minInclusive, maxInclusive bool
@@ -544,7 +557,7 @@ func (p *Parser) parseRange(ctx context) (bleve.Query, error) {
 // parseRelational handles greaterthan/lessthan etc...
 // Implemented as a range.
 //   relational = ("<"|">"|"<="|">=") lit
-func (p *Parser) parseRelational(ctx context) (bleve.Query, error) {
+func (p *Parser) parseRelational(ctx context) (*Query, error) {
 
 	var minVal, maxVal string
 	var minInclusive, maxInclusive bool

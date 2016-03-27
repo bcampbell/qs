@@ -2,7 +2,6 @@ package qs
 
 import (
 	"fmt"
-	"github.com/blevesearch/bleve"
 	"github.com/blevesearch/bleve/numeric_util"
 	"strconv"
 	"time"
@@ -99,13 +98,13 @@ func (rp *rangeParams) dateArgs() (bool, time.Time, time.Time) {
 }
 
 // try and build a query from the given params
-func (rp *rangeParams) generate() (bleve.Query, error) {
+func (rp *rangeParams) generate() (*Query, error) {
 	if rp.min == nil && rp.max == nil {
 		return nil, fmt.Errorf("empty range")
 	}
 	isNumeric, f1, f2 := rp.numericArgs()
 	if isNumeric {
-		return bleve.NewNumericRangeInclusiveQuery(f1, f2, rp.minInclusive, rp.maxInclusive), nil
+		return newNumericRangeInclusiveQuery(f1, f2, rp.minInclusive, rp.maxInclusive), nil
 	}
 
 	isDate, t1, t2 := rp.dateArgs()
@@ -122,7 +121,7 @@ func (rp *rangeParams) generate() (bleve.Query, error) {
 			foo2 := numeric_util.Int64ToFloat64(t2.UnixNano())
 			fMax = &foo2
 		}
-		return bleve.NewNumericRangeInclusiveQuery(fMin, fMax, rp.minInclusive, rp.maxInclusive), nil
+		return newNumericRangeInclusiveQuery(fMin, fMax, rp.minInclusive, rp.maxInclusive), nil
 	}
 	return nil, fmt.Errorf("not numeric")
 
