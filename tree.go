@@ -41,9 +41,15 @@ func (k QueryKind) String() string {
 	}
 }
 
+// Query is an intermediate representation, for constructing a bleve.Query from
+// The fields used depend on the type of query.
 type Query struct {
-	Kind      QueryKind
-	Txt       string
+	Kind QueryKind
+	Txt  string
+	// Children holds sets of subqueries.
+	// For Boolean queries, these sets are (must,should,mustNot)
+	// For Conjunction/Disjunction queries, only the first set is used.
+	// Other query types don't have children.
 	Children  [3][]*Query
 	Boost     float64 // default should be 1.0!
 	Field     string
@@ -77,6 +83,7 @@ func groupToBleve(grp []*Query) []bleve.Query {
 	return out
 }
 
+// ToBleve converts the intermediate query tree into a bleve.Query
 func (q *Query) ToBleve() bleve.Query {
 
 	var bq bleve.Query

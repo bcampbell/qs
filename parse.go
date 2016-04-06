@@ -77,6 +77,8 @@ func (p *Parser) Parse(q string) (bleve.Query, error) {
 	return tree.ToBleve(), nil
 }
 
+// ParseToTree returns an intermediate representation of the query,
+// before it is turned into a bleve.Query
 func (p *Parser) ParseToTree(q string) (*Query, error) {
 	p.tokens = lex(q)
 	ctx := context{field: ""}
