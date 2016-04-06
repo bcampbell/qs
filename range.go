@@ -104,7 +104,7 @@ func (rp *rangeParams) generate() (*Query, error) {
 	}
 	isNumeric, f1, f2 := rp.numericArgs()
 	if isNumeric {
-		return newNumericRangeInclusiveQuery(f1, f2, rp.minInclusive, rp.maxInclusive), nil
+		return NewNumericRangeInclusiveQuery(f1, f2, rp.minInclusive, rp.maxInclusive), nil
 	}
 
 	isDate, t1, t2 := rp.dateArgs()
@@ -121,7 +121,7 @@ func (rp *rangeParams) generate() (*Query, error) {
 			foo2 := numeric_util.Int64ToFloat64(t2.UnixNano())
 			fMax = &foo2
 		}
-		return newNumericRangeInclusiveQuery(fMin, fMax, rp.minInclusive, rp.maxInclusive), nil
+		return NewNumericRangeInclusiveQuery(fMin, fMax, rp.minInclusive, rp.maxInclusive), nil
 	}
 	return nil, fmt.Errorf("not numeric")
 

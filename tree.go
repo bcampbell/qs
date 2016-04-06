@@ -105,36 +105,36 @@ func (q *Query) ToBleve() bleve.Query {
 	return bq.SetField(q.Field).SetBoost(q.Boost)
 }
 
-func newMatchNoneQuery() *Query {
+func NewMatchNoneQuery() *Query {
 	return &Query{Kind: MatchNone, Boost: 1.0}
 }
 
-func newBooleanQuery(must, should, mustNot []*Query) *Query {
+func NewBooleanQuery(must, should, mustNot []*Query) *Query {
 	return &Query{Kind: Boolean, Boost: 1.0, Children: [3][]*Query{must, should, mustNot}}
 }
 
-func newDisjunctionQuery(disjuncts []*Query) *Query {
+func NewDisjunctionQuery(disjuncts []*Query) *Query {
 	return &Query{Kind: Disjunction, Boost: 1.0, Children: [3][]*Query{disjuncts, []*Query{}, []*Query{}}}
 }
 
-func newConjunctionQuery(conjuncts []*Query) *Query {
+func NewConjunctionQuery(conjuncts []*Query) *Query {
 
 	return &Query{Kind: Conjunction, Boost: 1.0, Children: [3][]*Query{conjuncts, []*Query{}, []*Query{}}}
 }
 
-func newWildcardQuery(wildcard string) *Query {
+func NewWildcardQuery(wildcard string) *Query {
 	return &Query{Kind: Wildcard, Boost: 1.0, Txt: wildcard}
 }
 
-func newFuzzyQuery(term string) *Query {
+func NewFuzzyQuery(term string) *Query {
 	return &Query{Kind: Fuzzy, Boost: 1.0, Fuzziness: 2, Txt: term}
 }
 
-func newMatchPhraseQuery(matchPhrase string) *Query {
+func NewMatchPhraseQuery(matchPhrase string) *Query {
 	return &Query{Kind: MatchPhrase, Boost: 1.0, Txt: matchPhrase}
 }
 
-func newNumericRangeInclusiveQuery(f1, f2 *float64, minInclusive, maxInclusive *bool) *Query {
+func NewNumericRangeInclusiveQuery(f1, f2 *float64, minInclusive, maxInclusive *bool) *Query {
 	return &Query{
 		Kind:         NumericRangeInclusive,
 		Boost:        1.0,

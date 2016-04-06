@@ -124,7 +124,7 @@ func (p *Parser) next() token {
 func (p *Parser) parseExprList(ctx context) (*Query, error) {
 	// <empty>
 	if p.peek().typ == tEOF {
-		return newMatchNoneQuery(), nil
+		return NewMatchNoneQuery(), nil
 	}
 
 	must := []*Query{}
@@ -162,7 +162,7 @@ func (p *Parser) parseExprList(ctx context) (*Query, error) {
 
 	total := len(must) + len(mustNot) + len(should)
 	if total == 0 {
-		return newMatchNoneQuery(), nil
+		return NewMatchNoneQuery(), nil
 	}
 	if total == 1 && len(must) == 1 {
 		return must[0], nil
@@ -171,7 +171,7 @@ func (p *Parser) parseExprList(ctx context) (*Query, error) {
 		return should[0], nil
 	}
 
-	return newBooleanQuery(must, should, mustNot), nil
+	return NewBooleanQuery(must, should, mustNot), nil
 }
 
 // parseExpr1 handles OR expressions
@@ -209,7 +209,7 @@ func (p *Parser) parseExpr1(ctx context) (tokType, *Query, error) {
 	// `+alice OR -bob OR chuck`  => `alice OR (NOT bob) OR chuck`
 	for i, _ := range queries {
 		if prefixes[i] == tMINUS {
-			queries[i] = newBooleanQuery(
+			queries[i] = NewBooleanQuery(
 				[]*Query{},
 				[]*Query{},
 				[]*Query{queries[i]}, // mustNot
@@ -217,7 +217,7 @@ func (p *Parser) parseExpr1(ctx context) (tokType, *Query, error) {
 		}
 	}
 
-	return tEOF, newDisjunctionQuery(queries), nil
+	return tEOF, NewDisjunctionQuery(queries), nil
 }
 
 // parseExpr2 handles AND expressions
@@ -255,7 +255,7 @@ func (p *Parser) parseExpr2(ctx context) (tokType, *Query, error) {
 	// `+alice AND -bob AND chuck`  => `alice AND (NOT bob) AND chuck`
 	for i, _ := range queries {
 		if prefixes[i] == tMINUS {
-			queries[i] = newBooleanQuery(
+			queries[i] = NewBooleanQuery(
 				[]*Query{},
 				[]*Query{},
 				[]*Query{queries[i]}, // mustNot
@@ -263,7 +263,7 @@ func (p *Parser) parseExpr2(ctx context) (tokType, *Query, error) {
 		}
 	}
 
-	return tEOF, newConjunctionQuery(queries), nil
+	return tEOF, NewConjunctionQuery(queries), nil
 }
 
 // parseExpr3 handles NOT expressions
@@ -287,7 +287,7 @@ func (p *Parser) parseExpr3(ctx context) (tokType, *Query, error) {
 	// `NOT -bob`  => `bob`
 	// `NOT +bob`  => `NOT bob`
 	if prefix != tMINUS {
-		q = newBooleanQuery(
+		q = NewBooleanQuery(
 			[]*Query{},
 			[]*Query{},
 			[]*Query{q}, // mustNot
@@ -355,16 +355,16 @@ func (p *Parser) parsePart(ctx context) (*Query, error) {
 	if tok.typ == tLITERAL {
 		var q *Query
 		if strings.ContainsAny(tok.val, "*?") {
-			q = newWildcardQuery(tok.val)
+			q = NewWildcardQuery(tok.val)
 		} else {
 			if p.peek().typ == tFUZZY {
 				fuzziness, err := p.parseFuzzySuffix()
 				if err != nil {
 					return nil, err
 				}
-				q = newFuzzyQuery(tok.val).SetFuzziness(fuzziness)
+				q = NewFuzzyQuery(tok.val).SetFuzziness(fuzziness)
 			} else {
-				q = newMatchPhraseQuery(tok.val)
+				q = NewMatchPhraseQuery(tok.val)
 			}
 		}
 		if ctx.field != "" {
@@ -380,7 +380,7 @@ func (p *Parser) parsePart(ctx context) (*Query, error) {
 				return nil, ParseError{tok.pos, "wildcards not supported in phrases"}
 			}
 		*/
-		q := newMatchPhraseQuery(txt)
+		q := NewMatchPhraseQuery(txt)
 		if ctx.field != "" {
 			q.SetField(ctx.field)
 		}
