@@ -131,10 +131,10 @@ For example,
 
 to match "`colour`" or "`color`" (or "`zolour`" or "`colours`"... but not "`colors`", as the `~1` allows only a single character change).
 
-If no number is specified, the default value is 2, so the following are equivalent:
+If no number is specified, the default value is 1, so the following are equivalent:
 
     wibble~
-    wibble~2
+    wibble~1
 
 
 
