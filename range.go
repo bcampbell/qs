@@ -3,7 +3,7 @@ package qs
 import (
 	"fmt"
 	"github.com/blevesearch/bleve"
-	"github.com/blevesearch/bleve/numeric_util"
+	"github.com/blevesearch/bleve/search/query"
 	"strconv"
 	"time"
 )
@@ -99,7 +99,7 @@ func (rp *rangeParams) dateArgs() (bool, time.Time, time.Time) {
 }
 
 // try and build a query from the given params
-func (rp *rangeParams) generate() (bleve.Query, error) {
+func (rp *rangeParams) generate() (query.Query, error) {
 	if rp.min == nil && rp.max == nil {
 		return nil, fmt.Errorf("empty range")
 	}
@@ -110,19 +110,7 @@ func (rp *rangeParams) generate() (bleve.Query, error) {
 
 	isDate, t1, t2 := rp.dateArgs()
 	if isDate {
-
-		// we'll skip the whole daterange thing and go with the raw timestamp
-		// relevant: https://github.com/blevesearch/bleve/issues/251
-		var fMin, fMax *float64
-		if rp.min != nil {
-			foo1 := numeric_util.Int64ToFloat64(t1.UnixNano())
-			fMin = &foo1
-		}
-		if rp.max != nil {
-			foo2 := numeric_util.Int64ToFloat64(t2.UnixNano())
-			fMax = &foo2
-		}
-		return bleve.NewNumericRangeInclusiveQuery(fMin, fMax, rp.minInclusive, rp.maxInclusive), nil
+		return bleve.NewDateRangeInclusiveQuery(t1, t2, rp.minInclusive, rp.maxInclusive), nil
 	}
 	return nil, fmt.Errorf("not numeric")
 
